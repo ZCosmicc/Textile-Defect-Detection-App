@@ -10,10 +10,10 @@ except ImportError:
 def main():
     st.title("Textile Defect Detection System")
     
-    # Load YOLO model - Updated path to match your file name
+    # Load YOLO model
     if YOLO_AVAILABLE:
         try:
-            model = YOLO('weights/bestYOLOv8.pt')  # Changed from 'best.pt' to 'bestYOLOv8.pt'
+            model = YOLO('weights/bestYOLOv8.pt')
             model_loaded = True
         except Exception as e:
             st.error(f"Error loading YOLO model: {str(e)}")
@@ -22,19 +22,35 @@ def main():
         st.warning("YOLO is not installed. Only basic image upload will be available.")
         model_loaded = False
     
+    # File uploader at the top
+    uploaded_file = st.file_uploader("Choose an image...", type=["jpg", "jpeg", "png"])
+    
+    # Store our detection result in session state so it persists across reruns
+    if 'detection_result' not in st.session_state:
+        st.session_state.detection_result = None
+    
     # Create two columns for input and output
     col1, col2 = st.columns(2)
     
+    # Input image display
     with col1:
         st.subheader("Input Image")
-        uploaded_file = st.file_uploader("Choose an image...", type=["jpg", "jpeg", "png"])
-        
         if uploaded_file is not None:
             image = Image.open(uploaded_file)
-            st.image(image, caption='Uploaded Image', use_container_width=True)
+            # Ensure image is in RGB mode
+            if image.mode != 'RGB':
+                image = image.convert('RGB')
+            st.image(image, use_container_width=True)
     
-    # Add detect button
-    if st.button("Detect Image"):
+    # Result display
+    with col2:
+        st.subheader("Result")
+        if st.session_state.detection_result is not None:
+            st.image(st.session_state.detection_result, use_container_width=True)
+            st.caption("Detection Result")
+    
+    # Button below both columns
+    if st.button("Detect Image", type="primary", use_container_width=True):
         if uploaded_file is None:
             st.warning("Please upload an image first")
         elif not YOLO_AVAILABLE or not model_loaded:
@@ -45,16 +61,26 @@ def main():
                     # Convert PIL Image to numpy array
                     image_array = np.array(image)
                     
+                    # Extra check for channels
+                    if len(image_array.shape) == 2 or (len(image_array.shape) == 3 and image_array.shape[2] == 1):
+                        # Convert grayscale to RGB
+                        image_array = np.stack((image_array,)*3, axis=-1) if len(image_array.shape) == 2 else np.concatenate([image_array]*3, axis=2)
+                    
                     # Get detection results
                     results = model(image_array)
                     
-                    # Display results
-                    with col2:
-                        st.subheader("Result")
-                        res_plotted = results[0].plot()
-                        st.image(res_plotted, caption='Detection Result', use_container_width=True)
+                    # Store result in session state
+                    st.session_state.detection_result = results[0].plot()
+                    
+                    # Rerun to update the UI with the result
+                    st.rerun()
+                    
                 except Exception as e:
                     st.error(f"Error during detection: {str(e)}")
+                    # Add more debug info
+                    if uploaded_file is not None:
+                        img = Image.open(uploaded_file)
+                        st.error(f"Image mode: {img.mode}, Size: {img.size}, Format: {img.format}")
 
 if __name__ == "__main__":
     main()
